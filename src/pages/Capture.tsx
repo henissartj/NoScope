@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play, Square, Trash2, Filter, Search } from "lucide-react";
+import { Play, Square, Trash2, Filter, Search, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
-import { Packet, generateMockPacket } from "@/utils/mockData";
+import { Packet } from "@/utils/mockData";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -30,6 +30,7 @@ const PROTOCOL_COLORS: Record<string, string> = {
 export default function Capture() {
   const navigate = useNavigate();
   const [isCapturing, setIsCapturing] = useState(true);
+  const [hasFetched, setHasFetched] = useState(false);
   const [packets, setPackets] = useState<Packet[]>([]);
   const [filterText, setFilterText] = useState("");
   const tableRef = useRef<HTMLDivElement>(null);
@@ -38,12 +39,40 @@ export default function Capture() {
     let interval: NodeJS.Timeout;
     if (isCapturing) {
       interval = setInterval(() => {
-        setPackets((prev) => {
-          const newPackets = [...prev, generateMockPacket()];
-          if (newPackets.length > 1000) return newPackets.slice(newPackets.length - 1000);
-          return newPackets;
-        });
-      }, 500); // Add a packet every 500ms
+        try {
+          // @ts-ignore
+          const cp = window.require ? window.require('child_process') : null;
+          if (cp) {
+            cp.exec('powershell -Command "Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess | Select -First 15 | ConvertTo-Json"', (err: any, stdout: string) => {
+              if (!err && stdout) {
+                try {
+                  const data = JSON.parse(stdout);
+                  const conns = Array.isArray(data) ? data : [data];
+                  
+                  const newPackets = conns.map((c: any, i: number) => ({
+                id: `conn_${c.OwningProcess || 0}_${c.LocalPort}_${c.RemotePort}`,
+                no: Date.now() % 100000 + i,
+                timestamp: new Date().toISOString().split('T')[1].slice(0, -1),
+                source: `${c.LocalAddress}:${c.LocalPort}`,
+                destination: `${c.RemoteAddress}:${c.RemotePort}`,
+                protocol: "TCP",
+                length: 0, // Taille de paquet non disponible via Get-NetTCPConnection
+                info: `State: ${c.State} | PID: ${c.OwningProcess || 'N/A'}`,
+                state: c.State
+              }));
+
+                  setPackets((prev) => {
+                    const merged = [...prev, ...newPackets];
+                    if (merged.length > 1000) return merged.slice(merged.length - 1000);
+                    return merged;
+                  });
+                  setHasFetched(true);
+                } catch (e) {}
+              }
+            });
+          }
+        } catch (e) {}
+      }, 2000); // Poll every 2 seconds for active connections
     }
     return () => clearInterval(interval);
   }, [isCapturing]);
@@ -143,12 +172,12 @@ export default function Capture() {
           <thead className="sticky top-0 bg-background/95 backdrop-blur z-10 border-b border-foreground/10 font-medium text-foreground/70">
             <tr>
               <th className="px-4 py-2 w-16">No.</th>
-              <th className="px-4 py-2 w-32">Temps</th>
-              <th className="px-4 py-2 w-40">Source</th>
-              <th className="px-4 py-2 w-40">Destination</th>
+              <th className="px-4 py-2 w-28">Temps</th>
+              <th className="px-4 py-2 w-56">Source</th>
+              <th className="px-4 py-2 w-56">Destination</th>
               <th className="px-4 py-2 w-24">Protocole</th>
-              <th className="px-4 py-2 w-24">Taille</th>
-              <th className="px-4 py-2 w-full">Info</th>
+              <th className="px-4 py-2 w-20">Taille</th>
+              <th className="px-4 py-2 w-auto">Info</th>
             </tr>
           </thead>
           <tbody className="font-mono text-[13px]">
@@ -161,17 +190,17 @@ export default function Capture() {
                   idx % 2 === 0 ? "bg-transparent" : "bg-foreground/[0.02]"
                 )}
               >
-                <td className="px-4 py-1.5 text-foreground/50">{packet.no}</td>
-                <td className="px-4 py-1.5 text-foreground/70">{packet.timestamp}</td>
-                <td className="px-4 py-1.5">{packet.source}</td>
-                <td className="px-4 py-1.5">{packet.destination}</td>
-                <td className="px-4 py-1.5">
+                <td className="px-4 py-1.5 text-foreground/50 truncate" title={packet.no.toString()}>{packet.no}</td>
+                <td className="px-4 py-1.5 text-foreground/70 truncate" title={packet.timestamp}>{packet.timestamp}</td>
+                <td className="px-4 py-1.5 truncate" title={packet.source}>{packet.source}</td>
+                <td className="px-4 py-1.5 truncate" title={packet.destination}>{packet.destination}</td>
+                <td className="px-4 py-1.5 truncate">
                   <span className={clsx("px-2 py-0.5 rounded text-xs font-semibold", PROTOCOL_COLORS[packet.protocol] || "bg-foreground/10")}>
                     {packet.protocol}
                   </span>
                 </td>
-                <td className="px-4 py-1.5 text-foreground/70">{packet.length}</td>
-                <td className="px-4 py-1.5 text-foreground/90 truncate max-w-[500px]" title={packet.info}>
+                <td className="px-4 py-1.5 text-foreground/70 truncate" title={packet.length.toString()}>{packet.length}</td>
+                <td className="px-4 py-1.5 text-foreground/90 truncate max-w-[400px]" title={packet.info}>
                   {packet.info}
                 </td>
               </tr>
@@ -179,7 +208,14 @@ export default function Capture() {
           </tbody>
         </table>
         
-        {filteredPackets.length === 0 && (
+        {filteredPackets.length === 0 && !hasFetched && isCapturing && (
+          <div className="flex flex-col items-center justify-center h-64 text-foreground/40">
+            <Loader2 className="h-12 w-12 mb-4 animate-spin opacity-50" />
+            <p>Écoute du trafic réseau en cours...</p>
+          </div>
+        )}
+        
+        {filteredPackets.length === 0 && (hasFetched || !isCapturing) && (
           <div className="flex flex-col items-center justify-center h-64 text-foreground/40">
             <Search className="h-12 w-12 mb-4 opacity-50" />
             <p>Aucun paquet ne correspond à ce filtre.</p>

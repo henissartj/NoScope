@@ -16,45 +16,73 @@ export default function Export() {
     if (downloading) return;
     setDownloading(format);
     
-    setTimeout(() => {
-      // Simulate file download
-      const content = format === 'json' ? '{"mock": "data"}' : 'mock data';
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `noscope_export_eth0_morning.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
+    // @ts-ignore
+    const cp = window.require ? window.require('child_process') : null;
+    if (cp) {
+      cp.exec('powershell -Command "Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, CreationTime, OwningProcess | ConvertTo-Json"', (err: any, stdout: string) => {
+        let content = stdout;
+        
+        if (format === 'csv') {
+          try {
+            const data = JSON.parse(stdout);
+            const items = Array.isArray(data) ? data : [data];
+            if (items.length > 0) {
+              const headers = Object.keys(items[0]).join(',');
+              const rows = items.map(item => Object.values(item).join(',')).join('\n');
+              content = `${headers}\n${rows}`;
+            }
+          } catch(e) {
+            content = "Erreur lors de la conversion CSV";
+          }
+        }
+        
+        const blob = new Blob([content || "Aucune donnée disponible"], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `noscope_export_${Date.now()}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        setDownloading(null);
+        showToast(`Export ${format.toUpperCase()} réussi.`);
+      });
+    } else {
       setDownloading(null);
-      showToast(`Export ${format.toUpperCase()} réussi.`);
-    }, 1500);
+      showToast("L'export nécessite l'environnement Electron.");
+    }
   };
 
   const handleGeneratePdf = () => {
     if (isGeneratingPdf) return;
     setIsGeneratingPdf(true);
     
-    setTimeout(() => {
-      // Simulate PDF file download
-      const pdfContent = "%PDF-1.4\n%Mock PDF Content for NoScope Report\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-      const blob = new Blob([pdfContent], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `rapport_noscope_eth0_morning.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+    // @ts-ignore
+    const cp = window.require ? window.require('child_process') : null;
+    if (cp) {
+      cp.exec('powershell -Command "Get-NetTCPConnection | Select-Object -First 50 | Format-Table | Out-String"', (err: any, stdout: string) => {
+        // Un rapport texte simple téléchargé en .txt car la génération PDF nécessite une librairie externe
+        const content = `RAPPORT D'ANALYSE RÉSEAU NOSCOPE\nDate: ${new Date().toLocaleString()}\n\n${stdout || "Aucune donnée disponible"}`;
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `rapport_noscope_${Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
 
+        setIsGeneratingPdf(false);
+        showToast("Rapport généré et téléchargé avec succès.");
+      });
+    } else {
       setIsGeneratingPdf(false);
-      showToast("Rapport PDF généré et téléchargé avec succès.");
-    }, 2500);
+      showToast("L'export nécessite l'environnement Electron.");
+    }
   };
 
   const handleShare = () => {

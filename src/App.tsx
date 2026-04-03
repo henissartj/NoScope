@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Layout from "@/components/Layout";
 import Home from "@/pages/Home";
 import Capture from "@/pages/Capture";
+import Dashboard from "@/pages/Dashboard";
 import Analyze from "@/pages/Analyze";
 import Export from "@/pages/Export";
 import Settings from "@/pages/Settings";
@@ -19,8 +20,8 @@ export default function App() {
           setTimeout(() => setIsLoading(false), 500); // Délai de fin légèrement plus long
           return 100;
         }
-        // Avancement plus lent : entre 2% et 8% par tick
-        return prev + Math.floor(Math.random() * 7) + 2;
+        // Avancement fixe de 5% par tick
+        return prev + 5;
       });
     }, 180); // Intervalle de temps légèrement plus long entre chaque tick
     return () => clearInterval(timer);
@@ -61,6 +62,7 @@ export default function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/capture" element={<Capture />} />
           <Route path="/analyze/:id" element={<Analyze />} />
           <Route path="/export" element={<Export />} />

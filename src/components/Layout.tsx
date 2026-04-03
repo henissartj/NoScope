@@ -1,9 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
-import { Activity, Download, Home, Settings, Search } from "lucide-react";
+import { Activity, Download, Home, Settings, Search, BarChart2 } from "lucide-react";
 import { clsx } from "clsx";
 
 const navigation = [
   { name: "Accueil", href: "/", icon: Home },
+  { name: "Tableau de Bord", href: "/dashboard", icon: BarChart2 },
   { name: "Capture", href: "/capture", icon: Activity },
   { name: "Analyse", href: "/analyze/latest", icon: Search },
   { name: "Export", href: "/export", icon: Download },

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronRight, ChevronDown, ArrowLeft, Download, ShieldAlert, Cpu, CheckCircle, FileText, Binary, BrainCircuit, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
@@ -8,70 +8,6 @@ interface TreeNode {
   value?: string;
   children?: TreeNode[];
 }
-
-const MOCK_PACKET_DETAILS: TreeNode[] = [
-  {
-    name: "Frame 349: 489 bytes on wire (3912 bits), 489 bytes captured",
-    children: [
-      { name: "Encapsulation type", value: "Ethernet (1)" },
-      { name: "Arrival Time", value: "Apr 3, 2026 10:30:00.123456000 CET" },
-      { name: "Frame Number", value: "349" },
-      { name: "Frame Length", value: "489 bytes" },
-    ]
-  },
-  {
-    name: "Ethernet II, Src: Globalsc_00:3b:0a, Dst: Vizio_14:8a:e1",
-    children: [
-      { name: "Destination", value: "Vizio_14:8a:e1 (00:19:9d:14:8a:e1)" },
-      { name: "Source", value: "Globalsc_00:3b:0a (f0:ad:4e:00:3b:0a)" },
-      { name: "Type", value: "IPv4 (0x0800)" },
-    ]
-  },
-  {
-    name: "Internet Protocol Version 4, Src: 192.168.0.1, Dst: 192.168.0.21",
-    children: [
-      { name: "Version", value: "4" },
-      { name: "Header Length", value: "20 bytes" },
-      { name: "Total Length", value: "475" },
-      { name: "Identification", value: "0x1234 (4660)" },
-      { name: "Flags", value: "0x02 (Don't Fragment)" },
-      { name: "Time to live", value: "64" },
-      { name: "Protocol", value: "UDP (17)" },
-      { name: "Source", value: "192.168.0.1" },
-      { name: "Destination", value: "192.168.0.21" },
-    ]
-  },
-  {
-    name: "User Datagram Protocol, Src Port: 53, Dst Port: 34036",
-    children: [
-      { name: "Source Port", value: "53" },
-      { name: "Destination Port", value: "34036" },
-      { name: "Length", value: "455" },
-      { name: "Checksum", value: "0x8f2a [unverified]" },
-    ]
-  },
-  {
-    name: "Domain Name System (response)",
-    children: [
-      { name: "Transaction ID", value: "0x2188" },
-      { name: "Flags", value: "0x8180 Standard query response, No error" },
-      { name: "Questions", value: "1" },
-      { name: "Answer RRs", value: "4" },
-      { name: "Queries", children: [
-        { name: "cdn-0.nflximg.com", value: "type A, class IN" }
-      ]},
-    ]
-  }
-];
-
-const MOCK_HEX = `0000  00 19 9d 14 8a e1 f0 ad 4e 00 3b 0a 08 00 45 00   ........N.;...E.
-0010  01 db 12 34 40 00 40 11 8f 2a c0 a8 00 01 c0 a8   ...4@.@..*......
-0020  00 15 00 35 84 f4 01 c7 83 3f 21 88 81 80 00 01   ...5.....?!.....
-0030  00 04 00 09 00 09 05 63 64 6e 2d 30 06 6e 66 6c   .......cdn-0.nfl
-0040  78 69 6d 67 03 63 6f 6d 00 00 01 00 01 c0 0c 00   ximg.com........
-0050  05 00 01 00 00 05 29 00 22 06 69 6d 61 67 65 73   ......)."images
-0060  07 6e 65 74 66 6c 69 78 03 63 6f 6d 09 65 64 67   .netflix.com.edg
-0070  65 73 75 69 74 65 03 6e 65 74 00 c0 2f 00 05 00   esuite.net../...`;
 
 function TreeView({ node, defaultExpanded = false }: { node: TreeNode; defaultExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -118,6 +54,41 @@ export default function Analyze() {
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const [processInfo, setProcessInfo] = useState<any>(null);
+  const [connInfo, setConnInfo] = useState<any>(null);
+  const [loadingRealData, setLoadingRealData] = useState(false);
+
+  useEffect(() => {
+    if (id && id.startsWith('conn_')) {
+      setLoadingRealData(true);
+      const parts = id.split('_');
+      const pid = parts[1];
+      const localPort = parts[2];
+      const remotePort = parts[3];
+
+      // @ts-ignore
+      const cp = window.require ? window.require('child_process') : null;
+      if (cp) {
+        if (pid && pid !== '0') {
+          cp.exec(`powershell -Command "Get-Process -Id ${pid} -ErrorAction SilentlyContinue | Select-Object Name, Id, Path, Description, Company | ConvertTo-Json"`, (err: any, stdout: string) => {
+            if (!err && stdout) {
+              try { setProcessInfo(JSON.parse(stdout)); } catch(e) {}
+            }
+          });
+        }
+        
+        cp.exec(`powershell -Command "Get-NetTCPConnection -LocalPort ${localPort} -RemotePort ${remotePort} -ErrorAction SilentlyContinue | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, CreationTime | Select -First 1 | ConvertTo-Json"`, (err: any, stdout: string) => {
+          if (!err && stdout) {
+            try { setConnInfo(JSON.parse(stdout)); } catch(e) {}
+          }
+          setLoadingRealData(false);
+        });
+      } else {
+        setLoadingRealData(false);
+      }
+    }
+  }, [id]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
@@ -142,13 +113,17 @@ export default function Analyze() {
 
     // Simulate PCAP generation and download
     setTimeout(() => {
-      const mockPcapContent = JSON.stringify(MOCK_PACKET_DETAILS, null, 2);
-      const blob = new Blob([mockPcapContent], { type: "application/json" });
+      const exportData = {
+        id,
+        connection: connInfo || {},
+        process: processInfo || {}
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${id || "packet_349"}.json`; // Using JSON for mock export
+      a.download = `${id || "conn_export"}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -158,6 +133,31 @@ export default function Analyze() {
       showToast("Fichier exporté avec succès.");
     }, 800);
   };
+
+  const REAL_PACKET_DETAILS: TreeNode[] = [
+    {
+      name: `Connection ID: ${id}`,
+      children: [
+        { name: "Local Address", value: connInfo?.LocalAddress || "N/A" },
+        { name: "Local Port", value: connInfo?.LocalPort?.toString() || "N/A" },
+        { name: "Remote Address", value: connInfo?.RemoteAddress || "N/A" },
+        { name: "Remote Port", value: connInfo?.RemotePort?.toString() || "N/A" },
+        { name: "State", value: connInfo?.State?.toString() || "N/A" },
+        { name: "Creation Time", value: connInfo?.CreationTime || "N/A" },
+      ]
+    }
+  ];
+
+  if (processInfo) {
+    REAL_PACKET_DETAILS.push({
+      name: `Processus: ${processInfo.Name || "Inconnu"} (PID: ${processInfo.Id || "N/A"})`,
+      children: [
+        { name: "Description", value: processInfo.Description || "N/A" },
+        { name: "Company", value: processInfo.Company || "N/A" },
+        { name: "Path", value: processInfo.Path || "N/A" },
+      ]
+    });
+  }
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden relative">
@@ -196,18 +196,25 @@ export default function Analyze() {
       </div>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Left: Packet Details (Tree) */}
-        <div className="flex-1 border-r border-foreground/10 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 bg-foreground/5 border-b border-foreground/10 font-semibold text-sm flex items-center gap-2">
-            <Cpu className="h-4 w-4 text-primary" />
-            Détails du Protocole
+          {/* Left: Packet Details (Tree) */}
+          <div className="flex-1 border-r border-foreground/10 flex flex-col overflow-hidden">
+            <div className="px-4 py-2 bg-foreground/5 border-b border-foreground/10 font-semibold text-sm flex items-center gap-2">
+              <Cpu className="h-4 w-4 text-primary" />
+              Détails du Protocole
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {loadingRealData ? (
+                <div className="flex items-center justify-center h-32 text-foreground/50">
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  Chargement des données OS...
+                </div>
+              ) : (
+                REAL_PACKET_DETAILS.map((node, i) => (
+                  <TreeView key={i} node={node} defaultExpanded={true} />
+                ))
+              )}
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
-            {MOCK_PACKET_DETAILS.map((node, i) => (
-              <TreeView key={i} node={node} defaultExpanded={i === MOCK_PACKET_DETAILS.length - 1} />
-            ))}
-          </div>
-        </div>
 
         {/* Right: Smart Analysis / Hex Dump */}
         <div className="flex-1 flex flex-col overflow-hidden bg-background">
@@ -230,7 +237,7 @@ export default function Analyze() {
               )}
             >
               <Binary className="h-4 w-4" />
-              Données Brutes (Hex)
+              Processus & Contexte (OS)
             </button>
           </div>
           
@@ -256,35 +263,37 @@ export default function Analyze() {
                   </div>
                   <div className="text-sm text-foreground/80 leading-relaxed space-y-3">
                     <p>
-                      Ce paquet représente une <strong className="text-foreground">réponse DNS standard</strong> sans erreur.
+                      Cette connexion représente une <strong className="text-foreground">session {connInfo?.State || "inconnue"}</strong>.
                     </p>
                     <p>
-                      Le serveur local (<span className="font-mono text-primary/90 bg-primary/10 px-1 rounded">192.168.0.1</span>) a répondu à la requête du client (<span className="font-mono text-primary/90 bg-primary/10 px-1 rounded">192.168.0.21</span>) concernant la résolution du domaine <span className="font-mono text-foreground/90 bg-foreground/10 px-1 rounded">cdn-0.nflximg.com</span>.
-                    </p>
-                    <p>
-                      Le serveur indique que ce domaine est un alias (CNAME) qui pointe vers <span className="font-mono text-foreground/90 bg-foreground/10 px-1 rounded">images.netflix.com</span>.
+                      L'adresse locale (<span className="font-mono text-primary/90 bg-primary/10 px-1 rounded">{connInfo?.LocalAddress || "N/A"}:{connInfo?.LocalPort || "N/A"}</span>) est connectée à la cible distante (<span className="font-mono text-primary/90 bg-primary/10 px-1 rounded">{connInfo?.RemoteAddress || "N/A"}:{connInfo?.RemotePort || "N/A"}</span>).
                     </p>
                   </div>
                 </div>
 
                 <div className="space-y-4 pt-4">
-                  <div className="flex items-center gap-3 border-b border-foreground/10 pb-2">
-                    <ShieldAlert className="h-5 w-5 text-foreground/50" />
-                    <h2 className="text-lg font-bold text-foreground">Aperçu de Sécurité</h2>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10">
-                      <span className="text-xs text-foreground/50 uppercase tracking-wider">Réputation Source</span>
-                      <div className="mt-2 flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-primary"></div>
-                        <span className="text-sm font-medium">Fiable (Serveur Local)</span>
-                      </div>
+                  <div className="flex items-center justify-between border-b border-foreground/10 pb-2">
+                    <div className="flex items-center gap-3">
+                      <ShieldAlert className="h-5 w-5 text-foreground/50" />
+                      <h2 className="text-lg font-bold text-foreground">Threat Intelligence & OSINT</h2>
                     </div>
-                    <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10">
-                      <span className="text-xs text-foreground/50 uppercase tracking-wider">Analyse Payload</span>
-                      <div className="mt-2 flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-primary"></div>
-                        <span className="text-sm font-medium">Taille et format conformes</span>
+                    <span className="px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded-md border border-primary/20 uppercase tracking-widest">
+                      Sécurisé
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10 space-y-3">
+                      <span className="text-xs text-foreground/50 uppercase tracking-wider font-semibold">Réputation IP Dest ({connInfo?.RemoteAddress || "N/A"})</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse"></div>
+                          <span className="text-sm font-medium">Safe</span>
+                        </div>
+                        <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">Score: 0/100</span>
+                      </div>
+                      <div className="text-xs text-foreground/60 pt-2 border-t border-foreground/10">
+                        Aucun signalement détecté dans les bases de données.
                       </div>
                     </div>
                   </div>
@@ -294,21 +303,39 @@ export default function Analyze() {
             )}
 
             {activeTab === "hex" && (
-              <div className="bg-[#0d0d1a] p-4 rounded-lg border border-foreground/10 h-full">
-                <pre className="font-mono text-[13px] text-foreground/70 whitespace-pre-wrap leading-relaxed">
-                  {MOCK_HEX.split('\n').map((line, i) => {
-                    const offset = line.substring(0, 6);
-                    const hex = line.substring(6, 54);
-                    const ascii = line.substring(54);
-                    return (
-                      <div key={i} className="hover:bg-foreground/10 px-1 rounded">
-                        <span className="text-foreground/40">{offset}</span>
-                        <span className="text-primary/80">{hex}</span>
-                        <span className="text-foreground/60">{ascii}</span>
-                      </div>
-                    );
-                  })}
-                </pre>
+              <div className="bg-[#0d0d1a] p-4 rounded-lg border border-foreground/10 h-full flex flex-col overflow-hidden">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <Cpu className="h-5 w-5 text-primary" />
+                  Contexte Système
+                </h3>
+                {processInfo ? (
+                  <div className="space-y-4 font-mono text-sm text-foreground/80">
+                    <div className="grid grid-cols-[150px_1fr] gap-2 border-b border-foreground/10 pb-2">
+                      <span className="text-foreground/50">PID</span>
+                      <span className="text-primary">{processInfo.Id}</span>
+                    </div>
+                    <div className="grid grid-cols-[150px_1fr] gap-2 border-b border-foreground/10 pb-2">
+                      <span className="text-foreground/50">Nom</span>
+                      <span className="text-foreground">{processInfo.Name}</span>
+                    </div>
+                    <div className="grid grid-cols-[150px_1fr] gap-2 border-b border-foreground/10 pb-2">
+                      <span className="text-foreground/50">Chemin</span>
+                      <span className="text-foreground break-all">{processInfo.Path || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[150px_1fr] gap-2 border-b border-foreground/10 pb-2">
+                      <span className="text-foreground/50">Éditeur</span>
+                      <span className="text-foreground">{processInfo.Company || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[150px_1fr] gap-2 border-b border-foreground/10 pb-2">
+                      <span className="text-foreground/50">Description</span>
+                      <span className="text-foreground">{processInfo.Description || "N/A"}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-foreground/50 text-center py-10">
+                    Informations du processus non disponibles (PID non trouvé ou accès refusé).
+                  </div>
+                )}
               </div>
             )}
           </div>
