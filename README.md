@@ -2,7 +2,7 @@
 
 NoScope est un outil de capture et d’analyse de trafic réseau, simple, rapide et pensé pour explorer les paquets en toute clarté. Conçu comme une alternative moderne à Wireshark, il offre une interface épurée, une analyse avancée et une détection d'intrusion (IDS) intégrée.
 
-Développé par le Cartel Amiri]([https://nodejs.org/](https://fr.wikipedia.org/wiki/Cartel_Amiri)) & L'EMPRISE.
+Développé par le Cartel Amiri]([[https://nodejs.org/](https://fr.wikipedia.org/wiki/Cartel_Amiri)])) & L'EMPRISE.
 
 ## 🚀 Fonctionnalités
 
