@@ -1,12 +1,12 @@
 # NoScope
 
-NoScope est un outil de capture et d’analyse de trafic réseau, simple, rapide et pensé pour explorer les paquets en toute clarté. Conçu comme une alternative moderne à Wireshark, il offre une interface épurée, une analyse intelligente et une détection d'intrusion (IDS) intégrée.
+NoScope est un outil de capture et d’analyse de trafic réseau, simple, rapide et pensé pour explorer les paquets en toute clarté. Conçu comme une alternative moderne à Wireshark, il offre une interface épurée, une analyse avancée et une détection d'intrusion (IDS) intégrée.
 
 Développé par le Cartel Amiri & L'EMPRISE.
 
 ## 🚀 Fonctionnalités
 
-- **Analyse Intelligente** : Traduction automatique du trafic en résumés clairs.
+- **Analyse Avancée** : Traduction automatique du trafic en résumés clairs.
 - **Détection d'Intrusion (IDS)** : Analyse de la réputation source et du payload.
 - **Interface Moderne** : Thème sombre natif, sans animations superflues.
 - **Filtres Dynamiques** : Filtrage en temps réel par IP, port, protocole, etc.
@@ -41,7 +41,6 @@ Développé par le Cartel Amiri & L'EMPRISE.
 
 - `src/` : Code source de l'interface (React, TypeScript, Tailwind CSS).
 - `electron/` : Configuration du processus principal Electron (`main.cjs`).
-- `.trae/documents/` : Documents d'architecture et de spécifications (PRD).
 
 ## 📜 Licence
 

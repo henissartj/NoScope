@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Play, Square, Trash2, Filter, Search, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
-import { Packet } from "@/utils/mockData";
+import { Packet } from "@/utils/types";
 import {
   Chart as ChartJS,
   CategoryScale,

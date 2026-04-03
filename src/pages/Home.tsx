@@ -33,7 +33,7 @@ export default function Home() {
                 id: `eth${i}`,
                 name: ad.Name,
                 type: ad.InterfaceDescription.toLowerCase().includes('wi-fi') || ad.InterfaceDescription.toLowerCase().includes('wireless') ? 'wireless' : 'wired',
-                ip: ad.MacAddress, // Displaying MAC as fallback if IP isn't easily fetched in same command
+                ip: ad.MacAddress, // Utilisation de l'adresse MAC par défaut si l'IP n'est pas disponible immédiatement
                 traffic: 0, // Traffic réel récupéré dans le dashboard
                 isUp: ad.Status === "Up"
               }));

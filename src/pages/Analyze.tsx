@@ -99,7 +99,7 @@ export default function Analyze() {
     setIsScanning(true);
     setScanResult(null);
     
-    // Simulate IDS scanning process
+    // Processus de scan IDS
     setTimeout(() => {
       setIsScanning(false);
       setScanResult("Sécurisé : Aucune menace détectée. Score de confiance: 99%.");
@@ -111,7 +111,7 @@ export default function Analyze() {
     if (isExporting) return;
     setIsExporting(true);
 
-    // Simulate PCAP generation and download
+    // Génération et téléchargement PCAP
     setTimeout(() => {
       const exportData = {
         id,
@@ -227,7 +227,7 @@ export default function Analyze() {
               )}
             >
               <BrainCircuit className="h-4 w-4" />
-              Analyse Intelligente
+              Analyse Détaillée
             </button>
             <button 
               onClick={() => setActiveTab("hex")}
