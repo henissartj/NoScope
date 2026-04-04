@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { FileJson, FileText, Download, Share2, Printer, CheckCircle2, Loader2, Copy, Check, Activity } from "lucide-react";
+import { FileJson, FileText, Download, Share2, Printer, CheckCircle2, Loader2, Copy, Check, Activity, FileArchive } from "lucide-react";
 import { useNetwork } from "@/contexts/NetworkContext";
+import { writePcapFile } from "../services/pcap";
 
 export default function Export() {
   const { packets, isCapturing } = useNetwork();
@@ -14,8 +15,40 @@ export default function Export() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const handleDownloadPcap = () => {
+    if (packets.length === 0) {
+      showToast("Aucune donnée à exporter");
+      return;
+    }
+    try {
+      const pcapBuffer = writePcapFile(packets);
+      if (!pcapBuffer) {
+        showToast("Erreur: Génération PCAP non supportée sans Electron");
+        return;
+      }
+      const blob = new Blob([pcapBuffer], { type: 'application/vnd.tcpdump.pcap' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `noscope_capture_${Date.now()}.pcap`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast("Export PCAP réussi (Compatible Wireshark)");
+    } catch (e) {
+      console.error(e);
+      showToast("Erreur lors de la génération du fichier PCAP");
+    }
+  };
+
   const handleDownload = (format: string) => {
     if (downloading) return;
+    
+    if (format === 'pcap') {
+      handleDownloadPcap();
+      return;
+    }
+
     setDownloading(format);
     
     // @ts-ignore
@@ -208,7 +241,27 @@ export default function Export() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Formats d'Export</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {exportOptions.map((opt) => (
+            {/* PCAP Export */}
+            <div className="bg-background border border-foreground/10 p-6 rounded-xl shadow-sm hover:border-primary/50 transition-colors group relative overflow-hidden">
+              <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative z-10">
+                <div className="h-12 w-12 bg-primary/10 rounded-lg flex items-center justify-center text-primary mb-4 group-hover:scale-110 transition-transform">
+                  <FileArchive className="h-6 w-6" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Fichier PCAP</h3>
+                <p className="text-foreground/70 mb-6 text-sm">Format standard de l'industrie, compatible avec Wireshark et tcpdump. Idéal pour l'analyse approfondie (DPI).</p>
+                <button 
+                  onClick={() => handleDownload('pcap')}
+                  disabled={downloading === 'pcap' || packets.length === 0}
+                  className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+                >
+                  {downloading === 'pcap' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+                  {downloading === 'pcap' ? 'Génération...' : 'Télécharger (.pcap)'}
+                </button>
+              </div>
+            </div>
+
+            {exportOptions.filter(opt => opt.id !== 'pcap').map((opt) => (
               <div key={opt.id} className="relative bg-background/50 border border-foreground/10 rounded-xl p-6 hover:border-primary/50 transition-colors group cursor-pointer">
                 {opt.recommended && (
                   <span className="absolute -top-2 -right-2 bg-primary text-background text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">

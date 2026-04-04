@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronRight, ChevronDown, ArrowLeft, Download, ShieldAlert, Cpu, CheckCircle, FileText, Binary, BrainCircuit, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronDown, ArrowLeft, Download, ShieldAlert, Cpu, CheckCircle, FileText, Binary, BrainCircuit, Loader2, Globe, AlertOctagon } from "lucide-react";
 import { clsx } from "clsx";
+import { getGeoIP, GeoIPInfo } from "../services/geoip";
+import { createMockPacketBuffer, generateHexDump } from "../services/pcap";
 
 interface TreeNode {
   name: string;
@@ -48,7 +50,7 @@ export default function Analyze() {
   const navigate = useNavigate();
 
   // States for interactive features
-  const [activeTab, setActiveTab] = useState<"smart" | "hex">("smart");
+  const [activeTab, setActiveTab] = useState<"smart" | "process" | "hex">("smart");
   const [isScanning, setIsScanning] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -56,7 +58,9 @@ export default function Analyze() {
 
   const [processInfo, setProcessInfo] = useState<any>(null);
   const [connInfo, setConnInfo] = useState<any>(null);
+  const [geoInfo, setGeoInfo] = useState<GeoIPInfo | null>(null);
   const [loadingRealData, setLoadingRealData] = useState(false);
+  const [hexDumpText, setHexDumpText] = useState<string>("");
 
   useEffect(() => {
     if (id && id.startsWith('conn_')) {
@@ -77,9 +81,22 @@ export default function Analyze() {
           });
         }
         
-        cp.exec(`powershell -Command "Get-NetTCPConnection -LocalPort ${localPort} -RemotePort ${remotePort} -ErrorAction SilentlyContinue | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, CreationTime | Select -First 1 | ConvertTo-Json"`, (err: any, stdout: string) => {
+        cp.exec(`powershell -Command "Get-NetTCPConnection -LocalPort ${localPort} -RemotePort ${remotePort} -ErrorAction SilentlyContinue | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, CreationTime | Select -First 1 | ConvertTo-Json"`, async (err: any, stdout: string) => {
           if (!err && stdout) {
-            try { setConnInfo(JSON.parse(stdout)); } catch(e) {}
+            try { 
+              const conn = JSON.parse(stdout);
+              setConnInfo(conn); 
+              
+              // Simulate Packet Buffer for DPI
+              const buffer = createMockPacketBuffer(conn.LocalAddress, conn.RemoteAddress, conn.LocalPort, conn.RemotePort, "GET / HTTP/1.1\r\nHost: target\r\n\r\n");
+              if (buffer) setHexDumpText(generateHexDump(buffer));
+
+              // GeoIP Request
+              if (conn.RemoteAddress && !conn.RemoteAddress.startsWith("127.") && !conn.RemoteAddress.startsWith("192.168.") && !conn.RemoteAddress.startsWith("10.") && !conn.RemoteAddress.startsWith("172.")) {
+                const geo = await getGeoIP(conn.RemoteAddress);
+                if (geo) setGeoInfo(geo);
+              }
+            } catch(e) {}
           }
           setLoadingRealData(false);
         });
@@ -254,6 +271,16 @@ export default function Analyze() {
               Analyse Détaillée
             </button>
             <button 
+              onClick={() => setActiveTab("process")}
+              className={clsx(
+                "font-semibold text-sm flex items-center gap-2 pb-1 transition-colors border-b-2",
+                activeTab === "process" ? "text-primary border-primary" : "text-foreground/60 border-transparent hover:text-foreground/90"
+              )}
+            >
+              <Cpu className="h-4 w-4" />
+              Processus (OS)
+            </button>
+            <button 
               onClick={() => setActiveTab("hex")}
               className={clsx(
                 "font-semibold text-sm flex items-center gap-2 pb-1 transition-colors border-b-2",
@@ -261,7 +288,7 @@ export default function Analyze() {
               )}
             >
               <Binary className="h-4 w-4" />
-              Processus & Contexte (OS)
+              Hex Dump (DPI)
             </button>
           </div>
           
@@ -295,29 +322,70 @@ export default function Analyze() {
                   </div>
                 </div>
 
+                {/* GeoIP & Threat Intel */}
                 <div className="space-y-4 pt-4">
                   <div className="flex items-center justify-between border-b border-foreground/10 pb-2">
                     <div className="flex items-center gap-3">
-                      <ShieldAlert className="h-5 w-5 text-foreground/50" />
-                      <h2 className="text-lg font-bold text-foreground">Threat Intelligence & OSINT</h2>
+                      <Globe className="h-5 w-5 text-foreground/50" />
+                      <h2 className="text-lg font-bold text-foreground">Géolocalisation & Threat Intel</h2>
                     </div>
-                    <span className="px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded-md border border-primary/20 uppercase tracking-widest">
-                      Sécurisé
-                    </span>
+                    {geoInfo?.threatLevel === 'Malicious' ? (
+                      <span className="px-2 py-1 bg-red-500/10 text-red-500 text-xs font-bold rounded-md border border-red-500/20 uppercase tracking-widest flex items-center gap-1">
+                        <AlertOctagon className="h-3 w-3" /> Malveillant
+                      </span>
+                    ) : geoInfo?.threatLevel === 'Suspicious' ? (
+                      <span className="px-2 py-1 bg-amber-500/10 text-amber-500 text-xs font-bold rounded-md border border-amber-500/20 uppercase tracking-widest flex items-center gap-1">
+                        <ShieldAlert className="h-3 w-3" /> Suspect
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded-md border border-primary/20 uppercase tracking-widest flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" /> Sécurisé
+                      </span>
+                    )}
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10 space-y-3">
-                      <span className="text-xs text-foreground/50 uppercase tracking-wider font-semibold">Réputation IP Dest ({connInfo?.RemoteAddress || "N/A"})</span>
+                      <span className="text-xs text-foreground/50 uppercase tracking-wider font-semibold">Localisation ({connInfo?.RemoteAddress || "N/A"})</span>
+                      {geoInfo ? (
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-foreground/70">Pays:</span>
+                            <span className="font-semibold">{geoInfo.country}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-foreground/70">Ville:</span>
+                            <span className="font-semibold">{geoInfo.city || 'Inconnue'}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-foreground/70">ISP:</span>
+                            <span className="font-semibold">{geoInfo.isp || 'Inconnu'}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-foreground/60">
+                          {connInfo?.RemoteAddress?.startsWith("192.168.") || connInfo?.RemoteAddress?.startsWith("10.") || connInfo?.RemoteAddress?.startsWith("127.") 
+                            ? "Réseau Local (LAN) - Pas de géolocalisation publique." 
+                            : "Données de géolocalisation non disponibles ou en cours de chargement..."}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10 space-y-3">
+                      <span className="text-xs text-foreground/50 uppercase tracking-wider font-semibold">Threat Intelligence</span>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse"></div>
-                          <span className="text-sm font-medium">Safe</span>
+                          <div className={`h-2.5 w-2.5 rounded-full ${geoInfo?.threatLevel === 'Malicious' ? 'bg-red-500' : geoInfo?.threatLevel === 'Suspicious' ? 'bg-amber-500' : 'bg-primary'} animate-pulse`}></div>
+                          <span className="text-sm font-medium">{geoInfo?.threatLevel || 'Safe'}</span>
                         </div>
-                        <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">Score: 0/100</span>
+                        <span className={`text-xs font-mono px-2 py-0.5 rounded ${geoInfo?.threatLevel === 'Malicious' ? 'text-red-500 bg-red-500/10' : geoInfo?.threatLevel === 'Suspicious' ? 'text-amber-500 bg-amber-500/10' : 'text-primary bg-primary/10'}`}>
+                          Score: {geoInfo?.threatLevel === 'Malicious' ? '85/100' : geoInfo?.threatLevel === 'Suspicious' ? '40/100' : '0/100'}
+                        </span>
                       </div>
                       <div className="text-xs text-foreground/60 pt-2 border-t border-foreground/10">
-                        Aucun signalement détecté dans les bases de données.
+                        {geoInfo?.threatLevel === 'Malicious' ? "Alerte: Cette IP appartient à un FAI ou un pays connu pour des activités malveillantes fréquentes (VPN/Tor/etc)." :
+                         geoInfo?.threatLevel === 'Suspicious' ? "Attention: Le score de confiance de cette IP est moyen. Surveillance recommandée." :
+                         "Aucun signalement détecté dans les bases de données publiques."}
                       </div>
                     </div>
                   </div>
@@ -326,7 +394,7 @@ export default function Analyze() {
               </div>
             )}
 
-            {activeTab === "hex" && (
+            {activeTab === "process" && (
               <div className="bg-[#0d0d1a] p-4 rounded-lg border border-foreground/10 h-full flex flex-col overflow-hidden">
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                   <Cpu className="h-5 w-5 text-primary" />
@@ -360,6 +428,21 @@ export default function Analyze() {
                     Informations du processus non disponibles (PID non trouvé ou accès refusé).
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === "hex" && (
+              <div className="bg-[#0d0d1a] p-4 rounded-lg border border-foreground/10 h-full flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold flex items-center gap-2">
+                    <Binary className="h-5 w-5 text-primary" />
+                    Deep Packet Inspection (Hex Dump)
+                  </h3>
+                  <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded">Mock DPI Engine (cap driver not found)</span>
+                </div>
+                <div className="flex-1 overflow-y-auto bg-black/50 p-4 rounded border border-foreground/5 font-mono text-[13px] leading-tight whitespace-pre text-foreground/80">
+                  {hexDumpText || "Génération du dump hexadécimal..."}
+                </div>
               </div>
             )}
           </div>

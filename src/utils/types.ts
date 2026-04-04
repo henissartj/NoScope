@@ -8,4 +8,6 @@ export interface Packet {
   length: number;
   info: string;
   state?: string;
+  hexDump?: string;
+  payloadText?: string;
 }

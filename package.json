@@ -14,10 +14,13 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
+    "axios": "^1.14.0",
+    "cap": "^0.2.1",
     "chart.js": "^4.5.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.511.0",
+    "pcap-parser": "^0.2.1",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^18.3.1",
