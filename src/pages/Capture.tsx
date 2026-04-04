@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Play, Square, Trash2, Filter, Search, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 import { Packet } from "@/utils/types";
+import { useNetwork } from "@/contexts/NetworkContext";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -29,53 +30,9 @@ const PROTOCOL_COLORS: Record<string, string> = {
 
 export default function Capture() {
   const navigate = useNavigate();
-  const [isCapturing, setIsCapturing] = useState(true);
-  const [hasFetched, setHasFetched] = useState(false);
-  const [packets, setPackets] = useState<Packet[]>([]);
+  const { isCapturing, setIsCapturing, packets, clearPackets } = useNetwork();
   const [filterText, setFilterText] = useState("");
   const tableRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isCapturing) {
-      interval = setInterval(() => {
-        try {
-          // @ts-ignore
-          const cp = window.require ? window.require('child_process') : null;
-          if (cp) {
-            cp.exec('powershell -Command "Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess | Select -First 15 | ConvertTo-Json"', (err: any, stdout: string) => {
-              if (!err && stdout) {
-                try {
-                  const data = JSON.parse(stdout);
-                  const conns = Array.isArray(data) ? data : [data];
-                  
-                  const newPackets = conns.map((c: any, i: number) => ({
-                id: `conn_${c.OwningProcess || 0}_${c.LocalPort}_${c.RemotePort}`,
-                no: Date.now() % 100000 + i,
-                timestamp: new Date().toISOString().split('T')[1].slice(0, -1),
-                source: `${c.LocalAddress}:${c.LocalPort}`,
-                destination: `${c.RemoteAddress}:${c.RemotePort}`,
-                protocol: "TCP",
-                length: 0, // Taille de paquet non disponible via Get-NetTCPConnection
-                info: `State: ${c.State} | PID: ${c.OwningProcess || 'N/A'}`,
-                state: c.State
-              }));
-
-                  setPackets((prev) => {
-                    const merged = [...prev, ...newPackets];
-                    if (merged.length > 1000) return merged.slice(merged.length - 1000);
-                    return merged;
-                  });
-                  setHasFetched(true);
-                } catch (e) {}
-              }
-            });
-          }
-        } catch (e) {}
-      }, 2000); // Poll every 2 seconds for active connections
-    }
-    return () => clearInterval(interval);
-  }, [isCapturing]);
 
   useEffect(() => {
     if (isCapturing && tableRef.current) {
@@ -133,7 +90,7 @@ export default function Capture() {
             {isCapturing ? <Square className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current" />}
           </button>
           <button
-            onClick={() => setPackets([])}
+            onClick={clearPackets}
             className="p-2 rounded-md bg-foreground/5 text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
             title="Effacer les paquets"
           >
@@ -186,8 +143,8 @@ export default function Capture() {
                 key={packet.id}
                 onClick={() => navigate(`/analyze/${packet.id}`)}
                 className={clsx(
-                  "cursor-pointer border-b border-foreground/5 transition-colors hover:bg-foreground/10",
-                  idx % 2 === 0 ? "bg-transparent" : "bg-foreground/[0.02]"
+                  "cursor-pointer border-b border-foreground/10 transition-colors hover:bg-foreground/10",
+                  idx % 2 === 0 ? "bg-background" : "bg-foreground/5"
                 )}
               >
                 <td className="px-4 py-1.5 text-foreground/50 truncate" title={packet.no.toString()}>{packet.no}</td>
@@ -208,14 +165,14 @@ export default function Capture() {
           </tbody>
         </table>
         
-        {filteredPackets.length === 0 && !hasFetched && isCapturing && (
+        {filteredPackets.length === 0 && packets.length === 0 && isCapturing && (
           <div className="flex flex-col items-center justify-center h-64 text-foreground/40">
             <Loader2 className="h-12 w-12 mb-4 animate-spin opacity-50" />
             <p>Écoute du trafic réseau en cours...</p>
           </div>
         )}
         
-        {filteredPackets.length === 0 && (hasFetched || !isCapturing) && (
+        {filteredPackets.length === 0 && (packets.length > 0 || !isCapturing) && (
           <div className="flex flex-col items-center justify-center h-64 text-foreground/40">
             <Search className="h-12 w-12 mb-4 opacity-50" />
             <p>Aucun paquet ne correspond à ce filtre.</p>

@@ -7,6 +7,7 @@ import Dashboard from "@/pages/Dashboard";
 import Analyze from "@/pages/Analyze";
 import Export from "@/pages/Export";
 import Settings from "@/pages/Settings";
+import { NetworkProvider } from "@/contexts/NetworkContext";
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -58,17 +59,19 @@ export default function App() {
   }
 
   return (
-    <Router>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/capture" element={<Capture />} />
-          <Route path="/analyze/:id" element={<Analyze />} />
-          <Route path="/export" element={<Export />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Layout>
-    </Router>
+    <NetworkProvider>
+      <Router>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/capture" element={<Capture />} />
+            <Route path="/analyze/:id" element={<Analyze />} />
+            <Route path="/export" element={<Export />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </Layout>
+      </Router>
+    </NetworkProvider>
   );
 }

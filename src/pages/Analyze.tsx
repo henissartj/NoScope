@@ -99,10 +99,34 @@ export default function Analyze() {
     setIsScanning(true);
     setScanResult(null);
     
-    // Processus de scan IDS
+    // Processus de scan IDS (Analyse locale)
     setTimeout(() => {
       setIsScanning(false);
-      setScanResult("Sécurisé : Aucune menace détectée. Score de confiance: 99%.");
+      let isSafe = true;
+      let score = 99;
+      let msg = "Aucune menace détectée.";
+
+      if (connInfo) {
+        const port = connInfo.RemotePort;
+        if ([4444, 3389, 22, 23].includes(port)) {
+          isSafe = false;
+          score = 15;
+          msg = `Port suspect (${port}) détecté. Connexion potentiellement dangereuse.`;
+        } else if (port > 10000) {
+          score = 65;
+          msg = `Port élevé (${port}) détecté. Surveillance recommandée.`;
+        }
+      }
+
+      if (processInfo && processInfo.Path) {
+        const path = processInfo.Path.toLowerCase();
+        if (!path.includes("windows") && !path.includes("program files")) {
+          score -= 20;
+          msg += " Le processus ne s'exécute pas depuis un dossier système standard.";
+        }
+      }
+
+      setScanResult(`${isSafe ? "Sécurisé" : "Alerte"} : ${msg} Score de confiance: ${Math.max(0, score)}%.`);
       showToast("Analyse IDS terminée avec succès.");
     }, 1500);
   };

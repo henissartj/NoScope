@@ -1,159 +1,10 @@
-import { useState, useEffect, useRef } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { ShieldAlert, Activity, Globe, CheckCircle, ShieldX, Server, ArrowUpRight } from "lucide-react";
 import { clsx } from "clsx";
-
-const INITIAL_BANDWIDTH = Array.from({ length: 20 }).map((_, i) => {
-  const d = new Date();
-  d.setSeconds(d.getSeconds() - (20 - i) * 5);
-  return {
-    time: `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`,
-    in: 0,
-    out: 0,
-  };
-});
+import { useNetwork } from "@/contexts/NetworkContext";
 
 export default function Dashboard() {
-  const [bandwidthData, setBandwidthData] = useState(INITIAL_BANDWIDTH);
-  const [totalTraffic, setTotalTraffic] = useState("0 GB");
-  const [activeConnectionsCount, setActiveConnectionsCount] = useState(0);
-  
-  const [protocols, setProtocols] = useState([
-    { name: "TCP", value: 1, color: "#10b981" },
-    { name: "UDP", value: 1, color: "#3b82f6" },
-    { name: "HTTP/S", value: 1, color: "#8b5cf6" },
-    { name: "DNS", value: 1, color: "#f59e0b" },
-  ]);
-  
-  const [threats, setThreats] = useState<any[]>([]);
-  const [threatsBlocked, setThreatsBlocked] = useState(0);
-
-  const lastBytesRef = useRef<{rx: number, tx: number, time: number} | null>(null);
-
-  useEffect(() => {
-    const fetchStats = () => {
-      try {
-        // @ts-ignore
-        const cp = window.require ? window.require('child_process') : null;
-        if (cp) {
-          // Bandwidth
-          cp.exec('powershell -Command "Get-NetAdapterStatistics | Select-Object Name, ReceivedBytes, SentBytes | ConvertTo-Json"', (err: any, stdout: string) => {
-            if (!err && stdout) {
-              try {
-                const data = JSON.parse(stdout);
-                const adapters = Array.isArray(data) ? data : [data];
-                let totalRx = 0;
-                let totalTx = 0;
-                adapters.forEach((ad: any) => {
-                  totalRx += ad.ReceivedBytes || 0;
-                  totalTx += ad.SentBytes || 0;
-                });
-                
-                const totalGB = ((totalRx + totalTx) / (1024 * 1024 * 1024)).toFixed(2);
-                setTotalTraffic(`${totalGB} GB`);
-
-                const now = Date.now();
-                if (lastBytesRef.current) {
-                  const timeDiff = (now - lastBytesRef.current.time) / 1000;
-                  const rxDiff = totalRx - lastBytesRef.current.rx;
-                  const txDiff = totalTx - lastBytesRef.current.tx;
-                  
-                  const inMbps = Math.max(0, (rxDiff * 8) / 1000000 / timeDiff);
-                  const outMbps = Math.max(0, (txDiff * 8) / 1000000 / timeDiff);
-
-                  setBandwidthData(prev => {
-                    const newData = [...prev.slice(1)];
-                    const date = new Date();
-                    const timeStr = `${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
-                    newData.push({
-                      time: timeStr,
-                      in: parseFloat(inMbps.toFixed(2)),
-                      out: parseFloat(outMbps.toFixed(2)),
-                    });
-                    return newData;
-                  });
-                }
-                lastBytesRef.current = { rx: totalRx, tx: totalTx, time: now };
-              } catch(e) {}
-            }
-          });
-
-          // Active Connections & Protocols & Threats
-          cp.exec('powershell -Command "$tcp = Get-NetTCPConnection -ErrorAction SilentlyContinue | Select-Object RemoteAddress, RemotePort, State; $udp = Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Select-Object LocalAddress; @{ tcp = $tcp; udp = $udp } | ConvertTo-Json -Depth 2"', (err: any, stdout: string) => {
-            if (!err && stdout) {
-              try {
-                const data = JSON.parse(stdout);
-                const tcpConns = data.tcp ? (Array.isArray(data.tcp) ? data.tcp : [data.tcp]) : [];
-                const udpConns = data.udp ? (Array.isArray(data.udp) ? data.udp : [data.udp]) : [];
-                
-                const established = tcpConns.filter((c: any) => c.State === "Established" || c.State === 5);
-                setActiveConnectionsCount(established.length);
-
-                let httpCount = 0;
-                let dnsCount = 0;
-                let otherTcpCount = 0;
-                
-                const realThreats: any[] = [];
-                let blocked = 0;
-
-                tcpConns.forEach((c: any) => {
-                  if (c.RemotePort === 80 || c.RemotePort === 443) httpCount++;
-                  else if (c.RemotePort === 53) dnsCount++;
-                  else otherTcpCount++;
-
-                  // Generate some threat info based on real remote IPs (exclude localhost/0.0.0.0)
-                  if (c.RemoteAddress && c.RemoteAddress !== "0.0.0.0" && c.RemoteAddress !== "127.0.0.1" && !c.RemoteAddress.startsWith("::")) {
-                    if (realThreats.length < 5 && !realThreats.find(t => t.ip === c.RemoteAddress)) {
-                      // Simple logic to categorize based on port
-                      let type = "Standard";
-                      let status = "safe";
-                      let score = 0;
-                      
-                      if (![80, 443, 53].includes(c.RemotePort)) {
-                        type = "Non-Standard Port";
-                        status = "warning";
-                        score = 30 + (c.RemotePort % 40);
-                      }
-                      
-                      if (c.RemotePort > 10000) {
-                        type = "High Port Connection";
-                        status = "alert";
-                        score = 60 + (c.RemotePort % 30);
-                        blocked++;
-                      }
-
-                      realThreats.push({
-                        ip: c.RemoteAddress,
-                        country: "Unknown", // We don't have real geo lookup locally without API
-                        score,
-                        type,
-                        status
-                      });
-                    }
-                  }
-                });
-
-                if (realThreats.length > 0) setThreats(realThreats);
-                setThreatsBlocked(blocked);
-
-                setProtocols([
-                  { name: "TCP", value: otherTcpCount > 0 ? otherTcpCount : 1, color: "#10b981" },
-                  { name: "UDP", value: udpConns.length > 0 ? udpConns.length : 1, color: "#3b82f6" },
-                  { name: "HTTP/S", value: httpCount > 0 ? httpCount : 1, color: "#8b5cf6" },
-                  { name: "DNS", value: dnsCount > 0 ? dnsCount : 1, color: "#f59e0b" },
-                ]);
-
-              } catch (e) {}
-            }
-          });
-        }
-      } catch (e) {}
-    };
-
-    fetchStats();
-    const interval = setInterval(fetchStats, 5000); // Polling every 5s for heavier commands
-    return () => clearInterval(interval);
-  }, []);
+  const { bandwidthData, totalTraffic, activeConnectionsCount, protocols, threats, threatsBlocked } = useNetwork();
 
   return (
     <div className="flex-1 p-6 overflow-y-auto bg-background">
@@ -229,25 +80,56 @@ export default function Dashboard() {
             </h2>
             <div className="flex-1 min-h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={bandwidthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={bandwidthData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorIn" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="colorOut" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
                       <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="time" stroke="#666" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#666" fontSize={12} tickLine={false} axisLine={false} />
-                  <RechartsTooltip 
-                    contentStyle={{ backgroundColor: '#1a1a1a', borderColor: '#333', borderRadius: '8px' }}
-                    itemStyle={{ color: '#fff' }}
+                  <XAxis 
+                    dataKey="time" 
+                    stroke="currentColor" 
+                    opacity={0.3} 
+                    fontSize={12} 
+                    tickMargin={10} 
+                    minTickGap={20}
                   />
-                  <Area type="monotone" dataKey="in" name="Entrant" stroke="#10b981" fillOpacity={1} fill="url(#colorIn)" />
-                  <Area type="monotone" dataKey="out" name="Sortant" stroke="#3b82f6" fillOpacity={1} fill="url(#colorOut)" />
+                  <YAxis 
+                    stroke="currentColor" 
+                    opacity={0.3} 
+                    fontSize={12} 
+                    tickFormatter={(value) => `${value}`} 
+                    width={40}
+                  />
+                  <RechartsTooltip 
+                    contentStyle={{ backgroundColor: 'var(--color-background)', borderColor: 'rgba(255,255,255,0.1)', color: 'var(--color-foreground)' }}
+                    itemStyle={{ color: 'var(--color-foreground)' }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="in" 
+                    name="Entrant (Mbps)" 
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorIn)" 
+                    isAnimationActive={false}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="out" 
+                    name="Sortant (Mbps)" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorOut)" 
+                    isAnimationActive={false}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -313,35 +195,40 @@ export default function Dashboard() {
             </div>
             <div className="space-y-3">
               {threats.length === 0 ? (
-                <div className="text-center text-sm text-foreground/50 py-4">Aucune IP suspecte détectée</div>
+                <div className="flex flex-col items-center justify-center h-full text-foreground/40 space-y-4">
+                  <CheckCircle className="h-12 w-12 text-emerald-500/50" />
+                  <p>Aucune menace détectée. Le réseau est sécurisé.</p>
+                </div>
               ) : (
                 threats.map((threat, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-background/50 border border-foreground/5 rounded-lg hover:border-foreground/20 transition-colors">
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-foreground/5 hover:bg-foreground/5 transition-colors">
                     <div className="flex items-center gap-3">
                       <div className={clsx(
-                        "p-2 rounded-md flex items-center justify-center font-bold text-xs",
-                        threat.status === "quarantine" ? "bg-error/20 text-error" :
-                        threat.status === "alert" ? "bg-orange-500/20 text-orange-500" :
-                        threat.status === "warning" ? "bg-yellow-500/20 text-yellow-500" :
-                        "bg-primary/20 text-primary"
+                        "p-2 rounded-full",
+                        threat.severity === "high" ? "bg-red-500/10 text-red-500" :
+                        threat.severity === "medium" ? "bg-amber-500/10 text-amber-500" :
+                        "bg-emerald-500/10 text-emerald-500"
                       )}>
-                        {threat.score > 0 ? threat.score : "OK"}
+                        <ShieldAlert className="h-4 w-4" />
                       </div>
                       <div>
-                        <div className="font-mono text-sm font-medium">{threat.ip}</div>
-                        <div className="text-xs text-foreground/50">{threat.type} • {threat.country}</div>
+                        <p className="text-sm font-medium">{threat.type}</p>
+                        <div className="flex items-center gap-2 text-xs text-foreground/60 mt-0.5">
+                          <span className="font-mono">{threat.source}</span>
+                          <span>•</span>
+                          <span>{threat.desc}</span>
+                        </div>
                       </div>
                     </div>
-                    {threat.status === "quarantine" && (
-                      <span className="px-2 py-1 bg-error/10 text-error border border-error/20 rounded text-[10px] uppercase font-bold tracking-wider">
-                        En Quarantaine
+                    <div className="text-right">
+                      <div className="text-xs text-foreground/50">{threat.time}</div>
+                      <span className={clsx(
+                        "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1 inline-block",
+                        threat.status === "blocked" ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                      )}>
+                        {threat.status === "blocked" ? "Bloqué" : "Actif"}
                       </span>
-                    )}
-                    {threat.status === "safe" && (
-                      <span className="px-2 py-1 bg-primary/10 text-primary border border-primary/20 rounded text-[10px] uppercase font-bold tracking-wider">
-                        Sûr
-                      </span>
-                    )}
+                    </div>
                   </div>
                 ))
               )}

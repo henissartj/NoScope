@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, Play, Clock, Network, Server, HardDrive, RefreshCw } from "lucide-react";
+import { Activity, Play, Clock, Network, Server, HardDrive, RefreshCw, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 interface NetInterface {
   id: string;
@@ -14,6 +15,7 @@ interface NetInterface {
 
 export default function Home() {
   const navigate = useNavigate();
+  const { recentCaptures, setRecentCaptures } = useNetwork();
   const [interfaces, setInterfaces] = useState<NetInterface[]>([]);
   const [selectedInterface, setSelectedInterface] = useState("");
   const [loading, setLoading] = useState(true);
@@ -88,7 +90,10 @@ export default function Home() {
     }
   };
 
-  const RECENT_CAPTURES: any[] = [];
+  const handleClearCaptures = () => {
+    setRecentCaptures([]);
+    localStorage.removeItem("noscope-recent-captures");
+  };
 
   return (
     <div className="flex-1 p-8 overflow-y-auto">
@@ -165,10 +170,21 @@ export default function Home() {
 
         {/* Recent Captures */}
         <div className="space-y-4 pt-4">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Clock className="h-5 w-5 text-foreground/70" />
-            Captures Récentes
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Clock className="h-5 w-5 text-foreground/70" />
+              Captures Récentes
+            </h2>
+            {recentCaptures.length > 0 && (
+              <button 
+                onClick={handleClearCaptures}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground/50 hover:text-error bg-foreground/5 hover:bg-error/10 rounded-md transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Effacer l'historique
+              </button>
+            )}
+          </div>
           <div className="bg-background/50 border border-foreground/10 rounded-xl overflow-hidden">
             <table className="w-full text-left text-sm">
               <thead className="bg-foreground/5 border-b border-foreground/10">
@@ -181,14 +197,14 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-foreground/5">
-                {RECENT_CAPTURES.length === 0 ? (
+                {recentCaptures.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-8 text-center text-foreground/50">
                       Aucune capture récente. Lancez une analyse pour commencer.
                     </td>
                   </tr>
                 ) : (
-                  RECENT_CAPTURES.map((capture) => (
+                  recentCaptures.map((capture) => (
                     <tr key={capture.id} className="hover:bg-foreground/5 transition-colors">
                       <td className="px-6 py-4 font-medium">{capture.name}</td>
                       <td className="px-6 py-4 text-foreground/70">{capture.date}</td>
@@ -196,10 +212,10 @@ export default function Home() {
                       <td className="px-6 py-4 text-foreground/70">{capture.size}</td>
                       <td className="px-6 py-4 text-right">
                         <button 
-                          onClick={() => navigate(`/analyze/${capture.id}`)}
+                          onClick={() => navigate(`/capture`)}
                           className="text-primary hover:text-primary/80 font-medium text-sm"
                         >
-                          Ouvrir
+                          Reprendre
                         </button>
                       </td>
                     </tr>

@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { FileJson, FileText, Download, Share2, Printer, CheckCircle2, Loader2, Copy, Check } from "lucide-react";
+import { FileJson, FileText, Download, Share2, Printer, CheckCircle2, Loader2, Copy, Check, Activity } from "lucide-react";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 export default function Export() {
+  const { packets, isCapturing } = useNetwork();
   const [downloading, setDownloading] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -62,22 +64,72 @@ export default function Export() {
     // @ts-ignore
     const cp = window.require ? window.require('child_process') : null;
     if (cp) {
-      cp.exec('powershell -Command "Get-NetTCPConnection | Select-Object -First 50 | Format-Table | Out-String"', (err: any, stdout: string) => {
-        // Un rapport texte simple téléchargé en .txt car la génération PDF nécessite une librairie externe
-        const content = `RAPPORT D'ANALYSE RÉSEAU NOSCOPE\nDate: ${new Date().toLocaleString()}\n\n${stdout || "Aucune donnée disponible"}`;
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `rapport_noscope_${Date.now()}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
+      cp.exec('powershell -Command "Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, CreationTime, OwningProcess -First 50 | ConvertTo-Json"', (err: any, stdout: string) => {
         setIsGeneratingPdf(false);
-        showToast("Rapport généré et téléchargé avec succès.");
+        if (!err && stdout) {
+          try {
+            const data = JSON.parse(stdout);
+            const items = Array.isArray(data) ? data : [data];
+            
+            const htmlContent = `
+              <html>
+                <head>
+                  <title>Rapport NoScope</title>
+                  <style>
+                    body { font-family: sans-serif; padding: 20px; color: #333; }
+                    h1 { color: #10b981; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                    th { background-color: #f5f5f5; }
+                  </style>
+                </head>
+                <body>
+                  <h1>RAPPORT D'ANALYSE RÉSEAU NOSCOPE</h1>
+                  <p><strong>Date de génération:</strong> ${new Date().toLocaleString()}</p>
+                  <p><strong>Nombre d'entrées:</strong> ${items.length}</p>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Adresse Locale</th>
+                        <th>Port Local</th>
+                        <th>Adresse Distante</th>
+                        <th>Port Distant</th>
+                        <th>État</th>
+                        <th>PID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${items.map((item: any) => `
+                        <tr>
+                          <td>${item.LocalAddress || 'N/A'}</td>
+                          <td>${item.LocalPort || 'N/A'}</td>
+                          <td>${item.RemoteAddress || 'N/A'}</td>
+                          <td>${item.RemotePort || 'N/A'}</td>
+                          <td>${item.State || 'N/A'}</td>
+                          <td>${item.OwningProcess || 'N/A'}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                  <script>
+                    window.onload = () => {
+                      window.print();
+                    };
+                  </script>
+                </body>
+              </html>
+            `;
+            
+            const printWindow = window.open('', '', 'width=800,height=600');
+            if (printWindow) {
+              printWindow.document.write(htmlContent);
+              printWindow.document.close();
+              showToast("Rapport généré et prêt pour l'impression/sauvegarde PDF.");
+            }
+          } catch(e) {
+            showToast("Erreur lors de la génération du rapport PDF.");
+          }
+        }
       });
     } else {
       setIsGeneratingPdf(false);
@@ -129,14 +181,18 @@ export default function Export() {
         </div>
 
         {/* Current Capture Status */}
-        <div className="bg-foreground/5 border border-foreground/10 rounded-xl p-6 flex items-center justify-between">
+        <div className="bg-foreground/5 border border-foreground/10 rounded-xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-              <CheckCircle2 className="h-6 w-6" />
+            <div className={`h-12 w-12 rounded-full flex items-center justify-center ${isCapturing ? "bg-primary/20 text-primary" : "bg-foreground/10 text-foreground/50"}`}>
+              {isCapturing ? <Activity className="h-6 w-6 animate-pulse" /> : <CheckCircle2 className="h-6 w-6" />}
             </div>
             <div>
-              <h3 className="font-semibold text-lg">Session Active : eth0_capture_morning</h3>
-              <p className="text-sm text-foreground/60">12,450 paquets capturés • 14.2 MB</p>
+              <h3 className="font-semibold text-lg">
+                {isCapturing ? "Session Active" : "Dernière Session"} : NoScope_Capture
+              </h3>
+              <p className="text-sm text-foreground/60">
+                {packets.length.toLocaleString('fr-FR')} paquets capturés • {((packets.length * 512) / 1024 / 1024).toFixed(2)} MB
+              </p>
             </div>
           </div>
           <button 
